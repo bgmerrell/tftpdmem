@@ -3,17 +3,13 @@ package server
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"time"
 
 	"github.com/bgmerrell/tftpdmem/codes"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 const (
 	initBufSize    = 512
@@ -27,6 +23,15 @@ type Server struct {
 	connLimitCh chan struct{}
 	respTimeout uint
 	conn        *net.UDPConn
+}
+
+type srvError struct {
+	code uint16
+	msg  string
+}
+
+func (e *srvError) Error() string {
+	return fmt.Sprintf("%s (%d)", e.msg, e.code)
 }
 
 func New(port int, maxConcurrent uint, respTimeout uint, conn *net.UDPConn) *Server {
@@ -61,56 +66,84 @@ func (s *Server) handle(buf []byte, src *net.UDPAddr) {
 		}()
 	case <-time.After(time.Duration(s.respTimeout) * time.Second):
 		log.Println("Server too busy")
-		s.respondWithErr(codes.ErrGeneric, "Server too busy")
+		s.respondWithErr(&srvError{codes.ErrGeneric, "Server too busy"})
 		return
 	}
-	op, n := binary.Uvarint(buf[:opCodeBoundary])
-	if n <= 0 || op < minOpCode || op > maxOpCode {
-		log.Println("Invalid op code:", op)
-		s.respondWithErr(codes.ErrIllegalOp, "")
+	var op uint16
+	br := bytes.NewReader(buf)
+	err := binary.Read(br, binary.BigEndian, &op)
+	if err != nil {
+		log.Println("Unable to read op code")
+		s.respondWithErr(&srvError{codes.ErrGeneric, err.Error()})
 		return
 	}
-	log.Println("bytes received:", len(buf))
-	log.Println("op:", op)
-	log.Printf("addr: %#v\n", src)
-	log.Printf("data: %#v\n", buf)
-	log.Println("----------------------------")
+	if op < minOpCode || op > maxOpCode {
+		log.Println("Bad op code:", op)
+		s.respondWithErr(&srvError{codes.ErrIllegalOp, ""})
+		return
+	}
 	s.handleOpCode(op, buf[opCodeBoundary:], src)
 }
 
-func (s *Server) handleOpCode(op uint64, buf []byte, src *net.UDPAddr) {
+func write(filename string, data []byte) error {
+	log.Println("Writing filename:", filename)
+	log.Println("Writing data:", data)
+	return nil
+}
+
+func (s *Server) handleOpCode(op uint16, buf []byte, src *net.UDPAddr) {
+	var err error
 	switch op {
 	case codes.OpRrq:
 		log.Println("Read request")
 	case codes.OpWrq:
-		log.Println("Write request")
+		err = handleWriteRequest(s.conn, buf, src)
 	case codes.OpData:
+		err = handleDataRequest(s.conn, buf, src)
 		log.Println("Data msg")
 	case codes.OpAck:
 		log.Println("Ack msg")
 	case codes.OpErr:
 		log.Println("Err msg")
 	}
+	if err != nil {
+		log.Printf("%#v\n", err)
+		s.respondWithErr(err)
+	}
 }
 
-func (s *Server) respondWithErr(code uint16, msg string) {
-	buf := &bytes.Buffer{}
-	rawMsg := []byte(msg)
-	// RFC: "terminated with a zero byte"
-	rawMsg = append(rawMsg, 0)
+func (s *Server) respondWithErr(err error) {
+	var srvErr *srvError
+	switch err.(type) {
+	case *srvError:
+		srvErr = err.(*srvError)
+	default:
+		srvErr = &srvError{codes.ErrGeneric, err.Error()}
+
+	}
+	rawMsg := []byte(srvErr.msg)
 	data := []interface{}{
-		code,
+		uint16(codes.OpErr),
+		srvErr.code,
 		rawMsg,
-		uint16(0)}
+		uint8(0)}
+	resp, err := buildResponse(data)
+	if err != nil {
+		log.Printf("err building response: %s\n", err)
+	}
+	// TODO: respond
+	log.Printf("err response: %#v\n", resp)
+
+}
+
+func buildResponse(data []interface{}) ([]byte, error) {
+	var err error
+	buf := &bytes.Buffer{}
 	for _, v := range data {
 		err := binary.Write(buf, binary.BigEndian, v)
 		if err != nil {
-			log.Println("Failed to binary write:", err)
+			break
 		}
 	}
-	log.Printf("err buf: %#v\n", buf)
-}
-
-func genTid() int {
-	return rand.Intn(1 << 16) // RFC: "they must be between 0 and 65,535"
+	return buf.Bytes(), err
 }
