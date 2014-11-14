@@ -8,20 +8,18 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/bgmerrell/tftpdmem/defs"
+	"github.com/bgmerrell/tftpdmem/handlers"
 	"github.com/bgmerrell/tftpdmem/server"
 )
 
 // flags
 var (
-	port            int
-	maxConcurrent   uint
-	responseTimeout uint
+	port int
 )
 
 func init() {
 	flag.IntVar(&port, "port", 69, "Port for the tftp server")
-	flag.UintVar(&maxConcurrent, "maxConcurrent", 128, "Max requests handled concurrently")
-	flag.UintVar(&responseTimeout, "responseTimeout", 10, "Number of seconds to allow a request wait before being handled")
 	flag.Parse()
 }
 
@@ -31,16 +29,17 @@ func main() {
 		IP:   net.ParseIP("127.0.0.1"),
 		Port: port}
 	conn, err := net.ListenUDP(laddr.Network(), &laddr)
-	defer conn.Close()
 	if err != nil {
 		log.Println("ListenUDP failure", err)
-		conn.Close()
 		os.Exit(1)
 	}
+	defer conn.Close()
 
-	s := server.New(port, maxConcurrent, responseTimeout, conn)
-	quitCh := make(chan struct{})
-	go s.Serve(quitCh)
+	// The "main" server only supports read and write requests, which
+	// create new servers for data transfer.
+	opToHandle := server.OpToHandleMap{defs.OpWrq: handlers.HandleWriteRequest}
+	s := server.New(port, conn, opToHandle, false)
+	go s.Serve()
 
 	sigCh := make(chan os.Signal)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)

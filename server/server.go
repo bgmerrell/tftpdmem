@@ -3,147 +3,136 @@ package server
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"net"
-	"time"
 
-	"github.com/bgmerrell/tftpdmem/codes"
+	"github.com/bgmerrell/tftpdmem/defs"
+	fm "github.com/bgmerrell/tftpdmem/filemanager"
+	"github.com/bgmerrell/tftpdmem/util"
 )
 
 const (
-	initBufSize    = 512
-	minOpCode      = 1
-	maxOpCode      = 5
 	opCodeBoundary = 2
 )
 
+type OpToHandleMap map[uint16]func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error
+
 type Server struct {
-	port        int
-	connLimitCh chan struct{}
-	respTimeout uint
-	conn        *net.UDPConn
+	port            int
+	conn            *net.UDPConn
+	opToHandle      OpToHandleMap
+	disconnectOnErr bool
+	StopCh          chan struct{}
 }
 
-type srvError struct {
-	code uint16
-	msg  string
+type SrvError struct {
+	Code uint16
+	Msg  string
 }
 
-func (e *srvError) Error() string {
-	return fmt.Sprintf("%s (%d)", e.msg, e.code)
+func (e *SrvError) Error() string {
+	return fmt.Sprintf("%s (%d)", e.Msg, e.Code)
 }
 
-func New(port int, maxConcurrent uint, respTimeout uint, conn *net.UDPConn) *Server {
-	return &Server{port, make(chan struct{}, maxConcurrent), respTimeout, conn}
+func New(port int, conn *net.UDPConn, opToHandle OpToHandleMap, disconnectOnErr bool) *Server {
+	return &Server{port,
+		conn,
+		opToHandle,
+		disconnectOnErr,
+		make(chan struct{})}
 }
 
-func (s *Server) Serve(quitCh chan struct{}) {
+func (s *Server) Serve() {
 	for {
 		select {
-		// We're done.  Stop reading from the UDP connection, it will
-		// be closing soon.
-		case <-quitCh:
-			quitCh <- struct{}{}
+		// Stop and close the connection
+		case <-s.StopCh:
+			s.StopCh <- struct{}{}
+			s.conn.Close()
 			return
 		default:
-			buf := make([]byte, initBufSize)
+			buf := make([]byte, defs.BlockSize)
 			n, addr, err := s.conn.ReadFromUDP(buf)
 			if err != nil {
-				log.Println("Error reading from UDP:", err)
+				msg := "Error reading from UDP: " + err.Error()
+				log.Println(msg)
+				if s.disconnectOnErr {
+					s.respondWithErr(errors.New(msg), addr)
+					return
+				}
 				continue
 			}
-			go s.handle(buf[:n], addr)
+			go s.route(buf[:n], addr)
 		}
 	}
 }
 
-func (s *Server) handle(buf []byte, src *net.UDPAddr) {
-	select {
-	case s.connLimitCh <- struct{}{}:
-		defer func() {
-			<-s.connLimitCh
-		}()
-	case <-time.After(time.Duration(s.respTimeout) * time.Second):
-		log.Println("Server too busy")
-		s.respondWithErr(&srvError{codes.ErrGeneric, "Server too busy"})
-		return
-	}
+func (s *Server) route(buf []byte, src *net.UDPAddr) {
 	var op uint16
 	br := bytes.NewReader(buf)
 	err := binary.Read(br, binary.BigEndian, &op)
 	if err != nil {
 		log.Println("Unable to read op code")
-		s.respondWithErr(&srvError{codes.ErrGeneric, err.Error()})
+		s.respondWithErr(
+			&SrvError{defs.ErrGeneric, err.Error()}, src)
 		return
 	}
-	if op < minOpCode || op > maxOpCode {
+	if op < defs.MinOpCode || op > defs.MaxOpCode {
 		log.Println("Bad op code:", op)
-		s.respondWithErr(&srvError{codes.ErrIllegalOp, ""})
+		s.respondWithErr(&SrvError{defs.ErrIllegalOp, ""}, src)
 		return
 	}
-	s.handleOpCode(op, buf[opCodeBoundary:], src)
-}
-
-func write(filename string, data []byte) error {
-	log.Println("Writing filename:", filename)
-	log.Println("Writing data:", data)
-	return nil
-}
-
-func (s *Server) handleOpCode(op uint16, buf []byte, src *net.UDPAddr) {
-	var err error
-	switch op {
-	case codes.OpRrq:
-		log.Println("Read request")
-	case codes.OpWrq:
-		err = handleWriteRequest(s.conn, buf, src)
-	case codes.OpData:
-		err = handleDataRequest(s.conn, buf, src)
-		log.Println("Data msg")
-	case codes.OpAck:
-		log.Println("Ack msg")
-	case codes.OpErr:
-		log.Println("Err msg")
+	fn, ok := s.opToHandle[op]
+	if !ok {
+		msg := fmt.Sprintf("Unsupported op: %d", op)
+		log.Println(msg)
+		s.respondWithErr(errors.New(msg), src)
+		return
 	}
+	err = fn(buf[opCodeBoundary:], s.conn, src)
 	if err != nil {
-		log.Printf("%#v\n", err)
-		s.respondWithErr(err)
+		log.Println("Handle error: " + err.Error())
+		s.respondWithErr(err, src)
+		return
 	}
 }
 
-func (s *Server) respondWithErr(err error) {
-	var srvErr *srvError
-	switch err.(type) {
-	case *srvError:
-		srvErr = err.(*srvError)
+func (s *Server) respondWithErr(err error, src *net.UDPAddr) {
+	var srvErr *SrvError
+	shouldStop := s.disconnectOnErr
+	switch err := err.(type) {
+	case *SrvError:
+		srvErr = err
+	case fm.UnexpectedRemoteTidErr:
+		// Don't stop in the UnexpectedRemoteTidErr case
+		shouldStop = false
+		srvErr = &SrvError{defs.ErrUnknownTid, err.Error()}
 	default:
-		srvErr = &srvError{codes.ErrGeneric, err.Error()}
+		srvErr = &SrvError{defs.ErrGeneric, err.Error()}
 
 	}
-	rawMsg := []byte(srvErr.msg)
+	rawMsg := []byte(srvErr.Msg)
 	data := []interface{}{
-		uint16(codes.OpErr),
-		srvErr.code,
+		uint16(defs.OpErr),
+		srvErr.Code,
 		rawMsg,
 		uint8(0)}
-	resp, err := buildResponse(data)
+	resp, err := util.BuildResponse(data)
 	if err != nil {
 		log.Printf("err building response: %s\n", err)
 	}
-	// TODO: respond
 	log.Printf("err response: %#v\n", resp)
-
-}
-
-func buildResponse(data []interface{}) ([]byte, error) {
-	var err error
-	buf := &bytes.Buffer{}
-	for _, v := range data {
-		err := binary.Write(buf, binary.BigEndian, v)
-		if err != nil {
-			break
-		}
+	n, err := s.conn.WriteToUDP(resp, src)
+	if n != len(resp) {
+		log.Printf("Problem writing to UDP connection, %d of %d bytes written", n, len(resp))
 	}
-	return buf.Bytes(), err
+	if err != nil {
+		log.Println("Error writing to UDP connection: " + err.Error())
+	}
+	if shouldStop {
+		log.Println("Stopping")
+		s.StopCh <- struct{}{}
+	}
 }
