@@ -6,16 +6,8 @@ import (
 	"sync"
 
 	"github.com/bgmerrell/tftpdmem/defs"
+	errs "github.com/bgmerrell/tftpdmem/server/errors"
 )
-
-type UnexpectedRemoteTidErr struct {
-	tid         int
-	expectedTid int
-}
-
-func (e UnexpectedRemoteTidErr) Error() string {
-	return fmt.Sprintf("Got remote tid: %d, want %d", e.tid, e.expectedTid)
-}
 
 type connInfo struct {
 	filename     string
@@ -46,8 +38,8 @@ func AddFile(filename string, data []byte) error {
 	defer fileMu.Unlock()
 	_, ok := filenameToData[filename]
 	if ok {
-		return errors.New(fmt.Sprintf(
-			"Filename \"%s\" already exists", filename))
+		return &errs.SrvError{defs.ErrFileExists,
+			fmt.Sprintf("Filename \"%s\" already exists", filename)}
 	}
 	filenameToData[filename] = data
 	return nil
@@ -84,12 +76,12 @@ func Write(localTid int, remoteTid int, blockNum uint16, buf []byte) error {
 			"No connection info for local TID (%d)", localTid))
 	}
 	if remoteTid != info.remoteTid {
-		return UnexpectedRemoteTidErr{remoteTid, info.remoteTid}
+		return errs.UnexpectedRemoteTidErr{remoteTid, info.remoteTid}
 	}
 	if FileExists(info.filename) {
 		DelConnInfo(localTid)
-		return errors.New(fmt.Sprintf(
-			"Filename \"%s\" already exists", info.filename))
+		return &errs.SrvError{defs.ErrFileExists,
+			fmt.Sprintf("Filename \"%s\" already exists", info.filename)}
 	}
 	if blockNum != info.nextBlockNum {
 		DelConnInfo(localTid)

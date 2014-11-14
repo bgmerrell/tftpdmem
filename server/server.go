@@ -9,8 +9,8 @@ import (
 	"net"
 
 	"github.com/bgmerrell/tftpdmem/defs"
-	fm "github.com/bgmerrell/tftpdmem/filemanager"
 	"github.com/bgmerrell/tftpdmem/util"
+	errs "github.com/bgmerrell/tftpdmem/server/errors"
 )
 
 const (
@@ -20,20 +20,11 @@ const (
 type OpToHandleMap map[uint16]func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error
 
 type Server struct {
-	port             int
-	conn             *net.UDPConn
-	opToHandle       OpToHandleMap
+	port            int
+	conn            *net.UDPConn
+	opToHandle      OpToHandleMap
 	isTransferServer bool
-	StopCh           chan struct{}
-}
-
-type SrvError struct {
-	Code uint16
-	Msg  string
-}
-
-func (e *SrvError) Error() string {
-	return fmt.Sprintf("%s (%d)", e.Msg, e.Code)
+	StopCh          chan struct{}
 }
 
 func New(port int, conn *net.UDPConn, opToHandle OpToHandleMap, isTransferServer bool) *Server {
@@ -77,12 +68,12 @@ func (s *Server) route(buf []byte, src *net.UDPAddr) {
 	if err != nil {
 		log.Println("Unable to read op code")
 		s.respondWithErr(
-			&SrvError{defs.ErrGeneric, err.Error()}, src)
+			&errs.SrvError{defs.ErrGeneric, err.Error()}, src)
 		return
 	}
 	if op < defs.MinOpCode || op > defs.MaxOpCode {
 		log.Println("Bad op code:", op)
-		s.respondWithErr(&SrvError{defs.ErrIllegalOp, ""}, src)
+		s.respondWithErr(&errs.SrvError{defs.ErrIllegalOp, ""}, src)
 		return
 	}
 	fn, ok := s.opToHandle[op]
@@ -104,17 +95,17 @@ func (s *Server) route(buf []byte, src *net.UDPAddr) {
 }
 
 func (s *Server) respondWithErr(err error, src *net.UDPAddr) {
-	var srvErr *SrvError
+	var srvErr *errs.SrvError
 	shouldStop := s.isTransferServer
 	switch err := err.(type) {
-	case *SrvError:
+	case *errs.SrvError:
 		srvErr = err
-	case fm.UnexpectedRemoteTidErr:
+	case errs.UnexpectedRemoteTidErr:
 		// Don't stop in the UnexpectedRemoteTidErr case
 		shouldStop = false
-		srvErr = &SrvError{defs.ErrUnknownTid, err.Error()}
+		srvErr = &errs.SrvError{defs.ErrUnknownTid, err.Error()}
 	default:
-		srvErr = &SrvError{defs.ErrGeneric, err.Error()}
+		srvErr = &errs.SrvError{defs.ErrGeneric, err.Error()}
 
 	}
 	rawMsg := []byte(srvErr.Msg)

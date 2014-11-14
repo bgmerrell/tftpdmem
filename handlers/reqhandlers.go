@@ -14,6 +14,7 @@ import (
 	fm "github.com/bgmerrell/tftpdmem/filemanager"
 	"github.com/bgmerrell/tftpdmem/server"
 	"github.com/bgmerrell/tftpdmem/util"
+	errs "github.com/bgmerrell/tftpdmem/server/errors"
 )
 
 func init() {
@@ -27,17 +28,17 @@ func genTid() uint16 {
 func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
 	n := bytes.Index(buf, []byte{0})
 	if n < 1 {
-		return &server.SrvError{defs.ErrGeneric, "No filename provided"}
+		return &errs.SrvError{defs.ErrGeneric, "No filename provided"}
 	}
 	filename := string(buf[:n])
 	buf = buf[n+1:]
 	n = bytes.Index(buf, []byte{0})
 	if n < 1 {
-		return &server.SrvError{defs.ErrGeneric, "No mode provided"}
+		return &errs.SrvError{defs.ErrGeneric, "No mode provided"}
 	}
 	mode := string(buf[:n])
 	if mode != "octet" {
-		return &server.SrvError{defs.ErrGeneric,
+		return &errs.SrvError{defs.ErrGeneric,
 			fmt.Sprintf("Unsupported mode: %s", mode)}
 	}
 	log.Printf("Write request for filename: %s, mode: %s", filename, mode)
@@ -49,6 +50,12 @@ func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
 		msg := "Error getting new UDP conn: " + err.Error()
 		log.Println(msg)
 		return errors.New(msg)
+	}
+
+	// Check to see if file already exists
+	if fm.FileExists(filename) {
+		return &errs.SrvError{defs.ErrFileExists,
+			fmt.Sprintf("Filename \"%s\" already exists", filename)}
 	}
 
 	// Build ACK packet
