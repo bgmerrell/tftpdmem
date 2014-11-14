@@ -20,11 +20,11 @@ const (
 type OpToHandleMap map[uint16]func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error
 
 type Server struct {
-	port            int
-	conn            *net.UDPConn
-	opToHandle      OpToHandleMap
-	disconnectOnErr bool
-	StopCh          chan struct{}
+	port             int
+	conn             *net.UDPConn
+	opToHandle       OpToHandleMap
+	isTransferServer bool
+	StopCh           chan struct{}
 }
 
 type SrvError struct {
@@ -36,11 +36,11 @@ func (e *SrvError) Error() string {
 	return fmt.Sprintf("%s (%d)", e.Msg, e.Code)
 }
 
-func New(port int, conn *net.UDPConn, opToHandle OpToHandleMap, disconnectOnErr bool) *Server {
+func New(port int, conn *net.UDPConn, opToHandle OpToHandleMap, isTransferServer bool) *Server {
 	return &Server{port,
 		conn,
 		opToHandle,
-		disconnectOnErr,
+		isTransferServer,
 		make(chan struct{})}
 }
 
@@ -58,7 +58,7 @@ func (s *Server) Serve() {
 			if err != nil {
 				msg := "Error reading from UDP: " + err.Error()
 				log.Println(msg)
-				if s.disconnectOnErr {
+				if s.isTransferServer {
 					s.respondWithErr(errors.New(msg), addr)
 					return
 				}
@@ -71,6 +71,7 @@ func (s *Server) Serve() {
 
 func (s *Server) route(buf []byte, src *net.UDPAddr) {
 	var op uint16
+	bufSize := len(buf)
 	br := bytes.NewReader(buf)
 	err := binary.Read(br, binary.BigEndian, &op)
 	if err != nil {
@@ -97,11 +98,14 @@ func (s *Server) route(buf []byte, src *net.UDPAddr) {
 		s.respondWithErr(err, src)
 		return
 	}
+	if s.isTransferServer && bufSize < defs.BlockSize {
+		s.StopCh <- struct{}{}
+	}
 }
 
 func (s *Server) respondWithErr(err error, src *net.UDPAddr) {
 	var srvErr *SrvError
-	shouldStop := s.disconnectOnErr
+	shouldStop := s.isTransferServer
 	switch err := err.(type) {
 	case *SrvError:
 		srvErr = err
