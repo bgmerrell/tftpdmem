@@ -26,7 +26,6 @@ func HandleDataRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
 	err = fm.Write(localPort, src.Port, blockNum, buf)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 

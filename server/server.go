@@ -123,7 +123,6 @@ func (s *Server) respondWithErr(err error, src *net.UDPAddr) {
 	if err != nil {
 		log.Printf("err building response: %s\n", err)
 	}
-	log.Printf("err response: %#v\n", resp)
 	n, err := s.conn.WriteToUDP(resp, src)
 	if n != len(resp) {
 		log.Printf("Problem writing to UDP connection, %d of %d bytes written", n, len(resp))
@@ -132,7 +131,6 @@ func (s *Server) respondWithErr(err error, src *net.UDPAddr) {
 		log.Println("Error writing to UDP connection: " + err.Error())
 	}
 	if shouldStop {
-		log.Println("Stopping")
 		s.StopCh <- struct{}{}
 	}
 }

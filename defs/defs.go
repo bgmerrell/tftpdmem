@@ -3,9 +3,12 @@ package defs
 
 // misc
 const (
-	BlockSize = 512
-	MinOpCode = 1
-	MaxOpCode = 5
+	BlockSize      = 512
+	OpCodeSize     = 2
+	BlockNumSize   = 2
+	DataHeaderSize = OpCodeSize + BlockNumSize
+	MinOpCode      = 1
+	MaxOpCode      = 5
 )
 
 // op codes
