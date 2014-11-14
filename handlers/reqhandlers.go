@@ -13,8 +13,8 @@ import (
 	"github.com/bgmerrell/tftpdmem/defs"
 	fm "github.com/bgmerrell/tftpdmem/filemanager"
 	"github.com/bgmerrell/tftpdmem/server"
-	"github.com/bgmerrell/tftpdmem/util"
 	errs "github.com/bgmerrell/tftpdmem/server/errors"
+	"github.com/bgmerrell/tftpdmem/handlers/common"
 )
 
 func init() {
@@ -25,7 +25,34 @@ func genTid() uint16 {
 	return uint16(rand.Intn(1 << 16)) // RFC: "they must be between 0 and 65,535"
 }
 
-func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
+// startNewTransferServer starts a new server for the transferring data.  A
+// reference to the new server is returned.
+func startNewTransferServer(
+		conn *net.UDPConn,
+		handler func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error) *server.Server {
+	// Set up transfer server that handles data requests
+	opToHandle := server.OpToHandleMap{defs.OpData: handler}
+	localPort := conn.LocalAddr().(*net.UDPAddr).Port
+	s := server.New(localPort, conn, opToHandle, true)
+	go s.Serve()
+	return s
+}
+
+// initTransferConn returns a new UDP conn to be used for data transfer.
+func initTransferConn(src *net.UDPAddr) (*net.UDPConn, error) {
+	// Get new conn on new port for transfer server
+	laddr := net.UDPAddr{IP: net.ParseIP("127.0.0.1")}
+	conn, err := net.ListenUDP(src.Network(), &laddr)
+	if err != nil {
+		msg := "Error getting new UDP conn: " + err.Error()
+		log.Println(msg)
+		return conn, errors.New(msg)
+	}
+	return conn, err
+}
+
+
+func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (err error) {
 	n := bytes.Index(buf, []byte{0})
 	if n < 1 {
 		return &errs.SrvError{defs.ErrGeneric, "No filename provided"}
@@ -43,14 +70,7 @@ func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
 	}
 	log.Printf("Write request for filename: %s, mode: %s", filename, mode)
 
-	// Get new conn on new port for transfer server
-	laddr := net.UDPAddr{IP: net.ParseIP("127.0.0.1")}
-	conn, err := net.ListenUDP(src.Network(), &laddr)
-	if err != nil {
-		msg := "Error getting new UDP conn: " + err.Error()
-		log.Println(msg)
-		return errors.New(msg)
-	}
+	conn, err = initTransferConn(src)
 
 	// Check to see if file already exists
 	if fm.FileExists(filename) {
@@ -58,23 +78,13 @@ func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
 			fmt.Sprintf("Filename \"%s\" already exists", filename)}
 	}
 
-	// Build ACK packet
-	data := []interface{}{
-		uint16(defs.OpAck),
-		uint16(0)}
-	resp, err := util.BuildResponse(data)
+	resp, err := common.BuildAckPacket(0)
 	if err != nil {
-		msg := "Error building wrq ack response: " + err.Error()
-		log.Println(msg)
-		return errors.New(msg)
+		return err
 	}
 
-	// Set up transfer server that handles data requests
-	opToHandle := server.OpToHandleMap{
-		defs.OpData: HandleDataRequest}
+	s := startNewTransferServer(conn, HandleDataRequest)
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
-	s := server.New(localPort, conn, opToHandle, true)
-	go s.Serve()
 
 	// Add conn info to the file manager
 	fm.AddConnInfo(localPort, src.Port, filename)

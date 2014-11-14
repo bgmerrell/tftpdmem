@@ -7,9 +7,8 @@ import (
 	"log"
 	"net"
 
-	"github.com/bgmerrell/tftpdmem/defs"
+	"github.com/bgmerrell/tftpdmem/handlers/common"
 	fm "github.com/bgmerrell/tftpdmem/filemanager"
-	"github.com/bgmerrell/tftpdmem/util"
 )
 
 func HandleDataRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
@@ -29,16 +28,11 @@ func HandleDataRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
 		return err
 	}
 
-	// ACK packet (see spec)
-	data := []interface{}{
-		uint16(defs.OpAck),
-		blockNum}
-	resp, err := util.BuildResponse(data)
+	resp, err := common.BuildAckPacket(blockNum)
 	if err != nil {
-		msg := "Error building data ack response: " + err.Error()
-		log.Println(msg)
-		return errors.New(msg)
+		return err
 	}
+
 	n, err := conn.WriteToUDP(resp, src)
 	if n != len(resp) {
 		log.Printf("Problem writing to UDP connection, %d of %d byte written", n, len(resp))
