@@ -44,7 +44,7 @@ func (s *Server) Serve() {
 			s.conn.Close()
 			return
 		default:
-			buf := make([]byte, defs.BlockSize)
+			buf := make([]byte, defs.DatagramSize)
 			n, addr, err := s.conn.ReadFromUDP(buf)
 			if err != nil {
 				msg := "Error reading from UDP: " + err.Error()
@@ -82,6 +82,7 @@ func (s *Server) route(buf []byte, src *net.UDPAddr) {
 		s.respondWithErr(errors.New(msg), src)
 		return
 	}
+	log.Println("orig buf:", len(buf))
 	err = fn(buf[opCodeBoundary:], s.conn, src)
 	if err != nil {
 		log.Println("Handle error: " + err.Error())

@@ -40,7 +40,8 @@ func main() {
 	opToHandle := server.OpToHandleMap{
 		defs.OpWrq: handlers.HandleWriteRequest,
 		defs.OpRrq: handlers.HandleReadRequest,
-		// AFAICT we just ignore ACKs to the main server
+		// We'll just ignore ACKs to the main server, this server isn't
+		// smart enough to do anything about them.
 		defs.OpAck: func([]byte, *net.UDPConn, *net.UDPAddr) error { return nil }}
 	s := server.New(port, conn, opToHandle, false)
 	go s.Serve()

@@ -21,8 +21,6 @@ var fileMu sync.Mutex
 var tidToConnInfo map[int]*connInfo = make(map[int]*connInfo)
 var connMu sync.Mutex
 
-const fullDataSize = defs.BlockSize - defs.DataHeaderSize
-
 // FileExists returns whether or not a file exists
 func FileExists(filename string) bool {
 	fileMu.Lock()
@@ -89,9 +87,10 @@ func Write(localTid int, remoteTid int, blockNum uint16, buf []byte) error {
 			"Got block %d, want %d", blockNum, info.nextBlockNum))
 	}
 	info.data = append(info.data, buf...)
+	fmt.Println(len(info.data))
 
 	// Not done yet...
-	if len(buf) == fullDataSize {
+	if len(buf) == defs.BlockSize {
 		info.nextBlockNum++
 		return nil
 	}
@@ -124,8 +123,8 @@ func Read(localTid int, remoteTid int, blockNum uint16) ([]byte, error) {
 			"Got block %d, want %d", blockNum, info.nextBlockNum))
 	}
 	data := filenameToData[info.filename]
-	startIdx := int(blockNum * fullDataSize)
-	endIdx := int(startIdx + fullDataSize)
+	startIdx := int(blockNum * defs.BlockSize)
+	endIdx := int(startIdx + defs.BlockSize)
 	// A final ACK will put the startIdx out of bounds, and we don't need
 	// to respond to it.
 	if startIdx > len(data) {

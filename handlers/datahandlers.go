@@ -73,7 +73,7 @@ func HandleReadData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
 		return nil
 	}
 
-	resp, err := common.BuildDataPacket(blockNum, data)
+	resp, err := common.BuildDataPacket(blockNum+1, data)
 	if err != nil {
 		return err
 	}
