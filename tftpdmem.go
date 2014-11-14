@@ -37,7 +37,11 @@ func main() {
 
 	// The "main" server only supports read and write requests, which
 	// create new servers for data transfer.
-	opToHandle := server.OpToHandleMap{defs.OpWrq: handlers.HandleWriteRequest}
+	opToHandle := server.OpToHandleMap{
+		defs.OpWrq: handlers.HandleWriteRequest,
+		defs.OpRrq: handlers.HandleReadRequest,
+		// AFAICT we just ignore ACKs to the main server
+		defs.OpAck: func([]byte, *net.UDPConn, *net.UDPAddr) error { return nil }}
 	s := server.New(port, conn, opToHandle, false)
 	go s.Serve()
 

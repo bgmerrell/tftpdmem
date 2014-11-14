@@ -9,8 +9,8 @@ import (
 	"net"
 
 	"github.com/bgmerrell/tftpdmem/defs"
-	"github.com/bgmerrell/tftpdmem/util"
 	errs "github.com/bgmerrell/tftpdmem/server/errors"
+	"github.com/bgmerrell/tftpdmem/util"
 )
 
 const (
@@ -20,11 +20,11 @@ const (
 type OpToHandleMap map[uint16]func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error
 
 type Server struct {
-	port            int
-	conn            *net.UDPConn
-	opToHandle      OpToHandleMap
+	port             int
+	conn             *net.UDPConn
+	opToHandle       OpToHandleMap
 	isTransferServer bool
-	StopCh          chan struct{}
+	StopCh           chan struct{}
 }
 
 func New(port int, conn *net.UDPConn, opToHandle OpToHandleMap, isTransferServer bool) *Server {
@@ -62,7 +62,6 @@ func (s *Server) Serve() {
 
 func (s *Server) route(buf []byte, src *net.UDPAddr) {
 	var op uint16
-	bufSize := len(buf)
 	br := bytes.NewReader(buf)
 	err := binary.Read(br, binary.BigEndian, &op)
 	if err != nil {
@@ -88,9 +87,6 @@ func (s *Server) route(buf []byte, src *net.UDPAddr) {
 		log.Println("Handle error: " + err.Error())
 		s.respondWithErr(err, src)
 		return
-	}
-	if s.isTransferServer && bufSize < defs.BlockSize {
-		s.StopCh <- struct{}{}
 	}
 }
 

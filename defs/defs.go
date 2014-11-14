@@ -9,6 +9,7 @@ const (
 	DataHeaderSize = OpCodeSize + BlockNumSize
 	MinOpCode      = 1
 	MaxOpCode      = 5
+	FirstDataBlock = 1
 )
 
 // op codes

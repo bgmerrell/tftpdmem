@@ -12,26 +12,31 @@ import (
 
 	"github.com/bgmerrell/tftpdmem/defs"
 	fm "github.com/bgmerrell/tftpdmem/filemanager"
+	"github.com/bgmerrell/tftpdmem/handlers/common"
 	"github.com/bgmerrell/tftpdmem/server"
 	errs "github.com/bgmerrell/tftpdmem/server/errors"
-	"github.com/bgmerrell/tftpdmem/handlers/common"
 )
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func genTid() uint16 {
-	return uint16(rand.Intn(1 << 16)) // RFC: "they must be between 0 and 65,535"
+func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (err error) {
+	return handleRequest(buf, conn, src, true)
+}
+
+func HandleReadRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (err error) {
+	return handleRequest(buf, conn, src, false)
 }
 
 // startNewTransferServer starts a new server for the transferring data.  A
 // reference to the new server is returned.
 func startNewTransferServer(
-		conn *net.UDPConn,
-		handler func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error) *server.Server {
+	conn *net.UDPConn,
+	opCode uint16,
+	handler func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error) *server.Server {
 	// Set up transfer server that handles data requests
-	opToHandle := server.OpToHandleMap{defs.OpData: handler}
+	opToHandle := server.OpToHandleMap{opCode: handler}
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
 	s := server.New(localPort, conn, opToHandle, true)
 	go s.Serve()
@@ -51,8 +56,7 @@ func initTransferConn(src *net.UDPAddr) (*net.UDPConn, error) {
 	return conn, err
 }
 
-
-func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (err error) {
+func handleRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr, isWrite bool) (err error) {
 	n := bytes.Index(buf, []byte{0})
 	if n < 1 {
 		return &errs.SrvError{defs.ErrGeneric, "No filename provided"}
@@ -68,26 +72,58 @@ func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (err er
 		return &errs.SrvError{defs.ErrGeneric,
 			fmt.Sprintf("Unsupported mode: %s", mode)}
 	}
-	log.Printf("Write request for filename: %s, mode: %s", filename, mode)
+
+	if isWrite {
+		log.Printf("Write request for filename: %s, mode: %s", filename, mode)
+	} else {
+		log.Printf("Read request for filename: %s, mode: %s", filename, mode)
+	}
 
 	conn, err = initTransferConn(src)
-
-	// Check to see if file already exists
-	if fm.FileExists(filename) {
-		return &errs.SrvError{defs.ErrFileExists,
-			fmt.Sprintf("Filename \"%s\" already exists", filename)}
-	}
-
-	resp, err := common.BuildAckPacket(0)
-	if err != nil {
-		return err
-	}
-
-	s := startNewTransferServer(conn, HandleDataRequest)
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
 
+	// Check if file exists
+	exists := fm.FileExists(filename)
+	if isWrite && exists {
+		return &errs.SrvError{defs.ErrFileExists,
+			fmt.Sprintf("Filename \"%s\" already exists", filename)}
+	} else if !isWrite && !exists {
+		return &errs.SrvError{defs.ErrFileNotFound,
+			fmt.Sprintf("Filename \"%s\" does not exists", filename)}
+	}
+
 	// Add conn info to the file manager
-	fm.AddConnInfo(localPort, src.Port, filename)
+	var nextBlockNum uint16
+	if isWrite {
+		nextBlockNum = 1
+	} else {
+		nextBlockNum = 0
+	}
+	fm.AddConnInfo(localPort, src.Port, filename, nextBlockNum)
+
+	var resp []byte
+	if isWrite {
+		resp, err = common.BuildAckPacket(0)
+		if err != nil {
+			return err
+		}
+	} else {
+		data, err := fm.Read(localPort, src.Port, 0)
+		if err != nil {
+			return err
+		}
+		resp, err = common.BuildDataPacket(defs.FirstDataBlock, data)
+		if err != nil {
+			return err
+		}
+	}
+
+	var s *server.Server
+	if isWrite {
+		s = startNewTransferServer(conn, defs.OpData, HandleWriteData)
+	} else {
+		s = startNewTransferServer(conn, defs.OpAck, HandleReadData)
+	}
 
 	n, err = conn.WriteToUDP(resp, src)
 	if err != nil || n != len(resp) {

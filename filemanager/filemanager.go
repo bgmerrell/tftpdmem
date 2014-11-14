@@ -11,8 +11,8 @@ import (
 
 type connInfo struct {
 	filename     string
-	nextBlockNum uint16
 	remoteTid    int
+	nextBlockNum uint16
 	data         []byte
 }
 
@@ -21,7 +21,6 @@ var fileMu sync.Mutex
 var tidToConnInfo map[int]*connInfo = make(map[int]*connInfo)
 var connMu sync.Mutex
 
-const firstDataBlock = 1
 const fullDataSize = defs.BlockSize - defs.DataHeaderSize
 
 // FileExists returns whether or not a file exists
@@ -46,7 +45,7 @@ func AddFile(filename string, data []byte) error {
 }
 
 // AddConnInfo adds connection info by TID pair
-func AddConnInfo(localTid int, remoteTid int, filename string) error {
+func AddConnInfo(localTid int, remoteTid int, filename string, nextBlockNum uint16) error {
 	connMu.Lock()
 	defer connMu.Unlock()
 	_, ok := tidToConnInfo[localTid]
@@ -54,7 +53,8 @@ func AddConnInfo(localTid int, remoteTid int, filename string) error {
 		return errors.New(fmt.Sprintf(
 			"Local TID %d already exists", localTid))
 	}
-	tidToConnInfo[localTid] = &connInfo{filename, firstDataBlock, remoteTid, []byte{}}
+	tidToConnInfo[localTid] = &connInfo{
+		filename, remoteTid, nextBlockNum, []byte{}}
 	return nil
 }
 
@@ -103,4 +103,38 @@ func Write(localTid int, remoteTid int, blockNum uint16, buf []byte) error {
 		return err
 	}
 	return nil
+}
+
+// Read takes a tid and a blockNum and attempts to read data from a "file"
+// buffer.
+func Read(localTid int, remoteTid int, blockNum uint16) ([]byte, error) {
+	connMu.Lock()
+	info, ok := tidToConnInfo[localTid]
+	connMu.Unlock()
+	if !ok {
+		return nil, errors.New(fmt.Sprintf(
+			"No connection info for local TID (%d)", localTid))
+	}
+	if remoteTid != info.remoteTid {
+		return nil, errs.UnexpectedRemoteTidErr{remoteTid, info.remoteTid}
+	}
+	if blockNum != info.nextBlockNum {
+		DelConnInfo(localTid)
+		return nil, errors.New(fmt.Sprintf(
+			"Got block %d, want %d", blockNum, info.nextBlockNum))
+	}
+	data := filenameToData[info.filename]
+	startIdx := int(blockNum * fullDataSize)
+	endIdx := int(startIdx + fullDataSize)
+	// A final ACK will put the startIdx out of bounds, and we don't need
+	// to respond to it.
+	if startIdx > len(data) {
+		DelConnInfo(localTid)
+		return nil, nil
+	} else if endIdx > len(data) {
+		endIdx = len(data)
+	}
+	info.nextBlockNum++
+
+	return data[startIdx:endIdx], nil
 }

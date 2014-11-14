@@ -22,3 +22,17 @@ func BuildAckPacket(blockNum uint16) ([]byte, error) {
 	}
 	return ackpkt, err
 }
+
+func BuildDataPacket(blockNum uint16, filedata []byte) ([]byte, error) {
+	data := []interface{}{
+		uint16(defs.OpData),
+		blockNum,
+		filedata}
+	datapkt, err := util.BuildResponse(data)
+	if err != nil {
+		msg := "Error building ack response: " + err.Error()
+		log.Println(msg)
+		return nil, errors.New(msg)
+	}
+	return datapkt, err
+}
