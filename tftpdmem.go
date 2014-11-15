@@ -35,8 +35,8 @@ func main() {
 	}
 	defer conn.Close()
 
-	// The "main" server only supports read and write requests, which
-	// create new servers for data transfer.
+	// The "main" server only supports ACK and read and write requests,
+	// which create new servers for data transfer.
 	opToHandle := server.OpToHandleMap{
 		defs.OpWrq: handlers.HandleWriteRequest,
 		defs.OpRrq: handlers.HandleReadRequest,

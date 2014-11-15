@@ -82,7 +82,6 @@ func (s *Server) route(buf []byte, src *net.UDPAddr) {
 		s.respondWithErr(errors.New(msg), src)
 		return
 	}
-	log.Println("orig buf:", len(buf))
 	err = fn(buf[opCodeBoundary:], s.conn, src)
 	if err != nil {
 		log.Println("Handle error: " + err.Error())
