@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"log"
 	"net"
 
 	fm "github.com/bgmerrell/tftpdmem/filemanager"
@@ -22,10 +21,10 @@ func getBlockNum(buf []byte) (uint16, error) {
 	return blockNum, err
 }
 
-func HandleWriteData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
+func HandleWriteData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (resp []byte, err error) {
 	blockNum, err := getBlockNum(buf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// The rest of the buffer is the file data
 	const blockNumBoundary = 2 // Two bytes of block num
@@ -34,60 +33,38 @@ func HandleWriteData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
 	err = fm.Write(localPort, src.Port, blockNum, buf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	resp, err := common.BuildAckPacket(blockNum)
+	resp, err = common.BuildAckPacket(blockNum)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	n, err := conn.WriteToUDP(resp, src)
-	if n != len(resp) {
-		log.Printf("Problem writing to UDP connection, %d of %d byte written", n, len(resp))
-		return errors.New("Problem writing to UDP connection")
-	}
-	if err != nil {
-		msg := "Error writing to UDP connection: " + err.Error()
-		log.Println(msg)
-		return errors.New(msg)
-	}
-
-	return err
+	return resp, err
 }
 
-func HandleReadData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error {
+func HandleReadData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (resp []byte, err error) {
 	blockNum, err := getBlockNum(buf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
 
 	data, err := fm.Read(localPort, src.Port, blockNum)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// No response for a terminal ACK
 	if data == nil {
-		return nil
+		return nil, nil
 	}
 
-	resp, err := common.BuildDataPacket(blockNum+1, data)
+	resp, err = common.BuildDataPacket(blockNum+1, data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	n, err := conn.WriteToUDP(resp, src)
-	if n != len(resp) {
-		log.Printf("Problem writing to UDP connection, %d of %d byte written", n, len(resp))
-		return errors.New("Problem writing to UDP connection")
-	}
-	if err != nil {
-		msg := "Error writing to UDP connection: " + err.Error()
-		log.Println(msg)
-		return errors.New(msg)
-	}
-
-	return err
+	return resp, err
 }

@@ -21,11 +21,11 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (err error) {
+func HandleWriteRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) ([]byte, error) {
 	return handleRequest(buf, conn, src, true)
 }
 
-func HandleReadRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (err error) {
+func HandleReadRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) ([]byte, error) {
 	return handleRequest(buf, conn, src, false)
 }
 
@@ -34,7 +34,7 @@ func HandleReadRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (err err
 func startNewTransferServer(
 	conn *net.UDPConn,
 	opCode uint16,
-	handler func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error) *server.Server {
+	handler func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) ([]byte, error)) *server.Server {
 	// Set up transfer server that handles data requests
 	opToHandle := server.OpToHandleMap{opCode: handler}
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
@@ -56,20 +56,20 @@ func initTransferConn(src *net.UDPAddr) (*net.UDPConn, error) {
 	return conn, err
 }
 
-func handleRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr, isWrite bool) (err error) {
+func handleRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr, isWrite bool) (resp []byte, err error) {
 	n := bytes.Index(buf, []byte{0})
 	if n < 1 {
-		return &errs.SrvError{defs.ErrGeneric, "No filename provided"}
+		return nil, &errs.SrvError{defs.ErrGeneric, "No filename provided"}
 	}
 	filename := string(buf[:n])
 	buf = buf[n+1:]
 	n = bytes.Index(buf, []byte{0})
 	if n < 1 {
-		return &errs.SrvError{defs.ErrGeneric, "No mode provided"}
+		return nil, &errs.SrvError{defs.ErrGeneric, "No mode provided"}
 	}
 	mode := string(buf[:n])
 	if mode != "octet" {
-		return &errs.SrvError{defs.ErrGeneric,
+		return nil, &errs.SrvError{defs.ErrGeneric,
 			fmt.Sprintf("Unsupported mode: %s", mode)}
 	}
 
@@ -85,10 +85,10 @@ func handleRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr, isWrite bool
 	// Check if file exists
 	exists := fm.FileExists(filename)
 	if isWrite && exists {
-		return &errs.SrvError{defs.ErrFileExists,
+		return nil, &errs.SrvError{defs.ErrFileExists,
 			fmt.Sprintf("Filename \"%s\" already exists", filename)}
 	} else if !isWrite && !exists {
-		return &errs.SrvError{defs.ErrFileNotFound,
+		return nil, &errs.SrvError{defs.ErrFileNotFound,
 			fmt.Sprintf("Filename \"%s\" does not exists", filename)}
 	}
 
@@ -101,20 +101,19 @@ func handleRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr, isWrite bool
 	}
 	fm.AddConnInfo(localPort, src.Port, filename, nextBlockNum)
 
-	var resp []byte
 	if isWrite {
 		resp, err = common.BuildAckPacket(0)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		data, err := fm.Read(localPort, src.Port, 0)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		resp, err = common.BuildDataPacket(defs.FirstDataBlock, data)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -139,7 +138,7 @@ func handleRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr, isWrite bool
 		fm.DelConnInfo(localPort)
 		s.StopCh <- struct{}{}
 		conn.Close()
-		return errors.New(msg)
+		return nil, errors.New(msg)
 	}
-	return nil
+	return nil, nil
 }

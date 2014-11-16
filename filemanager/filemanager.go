@@ -87,7 +87,6 @@ func Write(localTid int, remoteTid int, blockNum uint16, buf []byte) error {
 			"Got block %d, want %d", blockNum, info.nextBlockNum))
 	}
 	info.data = append(info.data, buf...)
-	fmt.Println(len(info.data))
 
 	// Not done yet...
 	if len(buf) == defs.BlockSize {

@@ -13,11 +13,8 @@ import (
 	"github.com/bgmerrell/tftpdmem/util"
 )
 
-const (
-	opCodeBoundary = 2
-)
-
-type OpToHandleMap map[uint16]func(buf []byte, conn *net.UDPConn, src *net.UDPAddr) error
+type OpToHandleMap map[uint16]func(
+	buf []byte, conn *net.UDPConn, src *net.UDPAddr) ([]byte, error)
 
 type Server struct {
 	port             int
@@ -61,18 +58,9 @@ func (s *Server) Serve() {
 }
 
 func (s *Server) route(buf []byte, src *net.UDPAddr) {
-	var op uint16
-	br := bytes.NewReader(buf)
-	err := binary.Read(br, binary.BigEndian, &op)
-	if err != nil {
-		log.Println("Unable to read op code")
-		s.respondWithErr(
-			&errs.SrvError{defs.ErrGeneric, err.Error()}, src)
-		return
-	}
-	if op < defs.MinOpCode || op > defs.MaxOpCode {
-		log.Println("Bad op code:", op)
-		s.respondWithErr(&errs.SrvError{defs.ErrIllegalOp, ""}, src)
+	op, err := readOpCode(buf)
+	if err != nil || op < defs.MinOpCode || op > defs.MaxOpCode {
+		s.respondWithErr(&errs.SrvError{defs.ErrIllegalOp, err.Error()}, src)
 		return
 	}
 	fn, ok := s.opToHandle[op]
@@ -82,12 +70,47 @@ func (s *Server) route(buf []byte, src *net.UDPAddr) {
 		s.respondWithErr(errors.New(msg), src)
 		return
 	}
-	err = fn(buf[opCodeBoundary:], s.conn, src)
+	resp, err := fn(buf[defs.OpCodeSize:], s.conn, src)
 	if err != nil {
 		log.Println("Handle error: " + err.Error())
 		s.respondWithErr(err, src)
 		return
 	}
+	// No response if nil
+	if resp == nil {
+		// A transfer server returning nil means we're done (e.g.,
+		// we just received a terminal ACK from client)
+		if s.isTransferServer {
+			s.StopCh <- struct{}{}
+		}
+	} else {
+		err = s.respond(resp, src)
+		if err != nil {
+			log.Println(err)
+			s.respondWithErr(err, src)
+			return
+		}
+	}
+	// We're done if we get an undersized data packet
+	if (op == defs.OpData && len(buf) < defs.DatagramSize) && s.isTransferServer {
+		s.StopCh <- struct{}{}
+	}
+}
+
+func (s *Server) respond(resp []byte, src *net.UDPAddr) error {
+	n, err := s.conn.WriteToUDP(resp, src)
+	if err != nil || n != len(resp) {
+		var msg string
+		if err != nil {
+			msg = "Error writing to UDP connection: " + err.Error()
+		} else {
+			msg = fmt.Sprintf(
+				"Problem writing to UDP connection, %d of %d bytes written",
+				n, len(resp))
+		}
+		log.Println(msg)
+	}
+	return err
 }
 
 func (s *Server) respondWithErr(err error, src *net.UDPAddr) {
@@ -124,4 +147,15 @@ func (s *Server) respondWithErr(err error, src *net.UDPAddr) {
 	if shouldStop {
 		s.StopCh <- struct{}{}
 	}
+}
+
+func readOpCode(buf []byte) (op uint16, err error) {
+	br := bytes.NewReader(buf)
+	err = binary.Read(br, binary.BigEndian, &op)
+	if err != nil {
+		msg := "Unable to read op code: " + err.Error()
+		log.Println(msg)
+		return op, errors.New(msg)
+	}
+	return op, err
 }

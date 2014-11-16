@@ -10,7 +10,7 @@ func BuildResponse(data []interface{}) ([]byte, error) {
 	var err error
 	buf := &bytes.Buffer{}
 	for _, v := range data {
-		err := binary.Write(buf, binary.BigEndian, v)
+		err = binary.Write(buf, binary.BigEndian, v)
 		if err != nil {
 			break
 		}
