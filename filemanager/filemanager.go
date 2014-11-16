@@ -11,9 +11,9 @@ import (
 
 type FileManager struct {
 	filenameToData map[string]([]byte)
-	fileMu sync.Mutex
-	tidToConnInfo map[int]*connInfo
-	connMu sync.Mutex
+	fileMu         sync.Mutex
+	tidToConnInfo  map[int]*connInfo
+	connMu         sync.Mutex
 }
 
 type connInfo struct {
@@ -26,7 +26,7 @@ type connInfo struct {
 func New() *FileManager {
 	return &FileManager{
 		filenameToData: make(map[string]([]byte)),
-		tidToConnInfo: make(map[int]*connInfo)}
+		tidToConnInfo:  make(map[int]*connInfo)}
 }
 
 // FileExists returns whether or not a file exists
