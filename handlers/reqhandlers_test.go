@@ -15,17 +15,18 @@ func TestHandleWriteRequest(t *testing.T) {
 	ip := "127.0.0.1"
 	// Expect an ack with block number set to 0
 	expectedData := []byte{0x00, 0x04, 0x00, 0x00}
-	laddr := net.UDPAddr{IP: net.ParseIP(ip)}
-	conn, err := net.ListenUDP(laddr.Network(), &laddr)
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	laddr := &net.UDPAddr{IP: net.ParseIP(ip)}
+	conn, err := net.ListenUDP(laddr.Network(), laddr)
 	if err != nil {
 		t.Fatal("Failed to get UDP conn:", err)
 	}
+	defer conn.Close()
+	laddr = conn.LocalAddr().(*net.UDPAddr)
 	resp, err := HandleWriteRequest(
 		// foo\0octet\0
 		[]byte{0x66, 0x6f, 0x6f, 0x00, 0x6f, 0x63, 0x74, 0x65, 0x74, 0x00},
 		conn,
-		localAddr,
+		laddr,
 		fm)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +48,7 @@ func TestHandleWriteRequest(t *testing.T) {
 		t.Errorf("IP: %s, want: %s", addr.IP, ip)
 	}
 	// request handle should respond from a different port
-	if addr.Port == localAddr.Port {
+	if addr.Port == laddr.Port {
 		t.Errorf("Expected port (%d) to change", addr.Port)
 	}
 	if bytes.Compare(buf[:n], expectedData) != 0 {
@@ -63,17 +64,18 @@ func TestHandleReadRequest(t *testing.T) {
 	// Data packet with block num 1 and the file bytes
 	expectedData := []byte{0x00, 0x03, 0x00, 0x01, 0x61, 0x62, 0x63}
 	ip := "127.0.0.1"
-	laddr := net.UDPAddr{IP: net.ParseIP(ip)}
-	conn, err := net.ListenUDP(laddr.Network(), &laddr)
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	laddr := &net.UDPAddr{IP: net.ParseIP(ip)}
+	conn, err := net.ListenUDP(laddr.Network(), laddr)
 	if err != nil {
 		t.Fatal("Failed to get UDP conn:", err)
 	}
+	defer conn.Close()
+	laddr = conn.LocalAddr().(*net.UDPAddr)
 	resp, err := HandleReadRequest(
 		// foo\0octet\0
 		[]byte{0x66, 0x6f, 0x6f, 0x00, 0x6f, 0x63, 0x74, 0x65, 0x74, 0x00},
 		conn,
-		localAddr,
+		laddr,
 		fm)
 	if err != nil {
 		t.Fatal(err)
@@ -95,10 +97,73 @@ func TestHandleReadRequest(t *testing.T) {
 		t.Errorf("IP: %s, want: %s", addr.IP, ip)
 	}
 	// request handle should respond from a different port
-	if addr.Port == localAddr.Port {
+	if addr.Port == laddr.Port {
 		t.Errorf("Expected port (%d) to change", addr.Port)
 	}
 	if bytes.Compare(buf[:n], expectedData) != 0 {
 		t.Errorf("Data: %#v, want: %#v", buf, expectedData)
+	}
+}
+
+func TestHandleWriteRequestNoFilename(t *testing.T) {
+	fm := fmgr.New()
+	ip := "127.0.0.1"
+	laddr := &net.UDPAddr{IP: net.ParseIP(ip)}
+	conn, err := net.ListenUDP(laddr.Network(), laddr)
+	if err != nil {
+		t.Fatal("Failed to get UDP conn:", err)
+	}
+	defer conn.Close()
+	laddr = conn.LocalAddr().(*net.UDPAddr)
+	_, err = HandleWriteRequest(
+		// \0octet\0
+		[]byte{0x00, 0x6f, 0x63, 0x74, 0x65, 0x74, 0x00},
+		conn,
+		laddr,
+		fm)
+	if err == nil {
+		t.Error("Expected error for write request w/o filename")
+	}
+}
+
+func TestHandleWriteRequestNoMode(t *testing.T) {
+	fm := fmgr.New()
+	ip := "127.0.0.1"
+	laddr := &net.UDPAddr{IP: net.ParseIP(ip)}
+	conn, err := net.ListenUDP(laddr.Network(), laddr)
+	if err != nil {
+		t.Fatal("Failed to get UDP conn:", err)
+	}
+	defer conn.Close()
+	laddr = conn.LocalAddr().(*net.UDPAddr)
+	_, err = HandleWriteRequest(
+		// foo\0
+		[]byte{0x66, 0x6f, 0x6f, 0x00, 0x00},
+		conn,
+		laddr,
+		fm)
+	if err == nil {
+		t.Error("Expected error for write request w/o mode")
+	}
+}
+
+func TestHandleWriteRequestUnsupportedMode(t *testing.T) {
+	fm := fmgr.New()
+	ip := "127.0.0.1"
+	laddr := &net.UDPAddr{IP: net.ParseIP(ip)}
+	conn, err := net.ListenUDP(laddr.Network(), laddr)
+	if err != nil {
+		t.Fatal("Failed to get UDP conn:", err)
+	}
+	defer conn.Close()
+	laddr = conn.LocalAddr().(*net.UDPAddr)
+	_, err = HandleWriteRequest(
+		// foo\0netascii\0
+		[]byte{0x66, 0x6f, 0x6f, 0x00, 0x6e, 0x65, 0x74, 0x61, 0x73, 0x63, 0x69, 0x69, 0x00},
+		conn,
+		laddr,
+		fm)
+	if err == nil {
+		t.Error("Expected error for write request with unsupported mode")
 	}
 }

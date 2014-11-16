@@ -10,6 +10,8 @@ import (
 	"github.com/bgmerrell/tftpdmem/handlers/common"
 )
 
+// getBlockNum returns the block number from the raw buf assuming the op code
+// has already been stripped off.
 func getBlockNum(buf []byte) (uint16, error) {
 	var blockNum uint16
 	br := bytes.NewReader(buf)
