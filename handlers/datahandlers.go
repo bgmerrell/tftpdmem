@@ -21,7 +21,7 @@ func getBlockNum(buf []byte) (uint16, error) {
 	return blockNum, err
 }
 
-func HandleWriteData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (resp []byte, err error) {
+func HandleWriteData(buf []byte, conn *net.UDPConn, src *net.UDPAddr, fm *fm.FileManager) (resp []byte, err error) {
 	blockNum, err := getBlockNum(buf)
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func HandleWriteData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (resp []by
 	return resp, err
 }
 
-func HandleReadData(buf []byte, conn *net.UDPConn, src *net.UDPAddr) (resp []byte, err error) {
+func HandleReadData(buf []byte, conn *net.UDPConn, src *net.UDPAddr, fm *fm.FileManager) (resp []byte, err error) {
 	blockNum, err := getBlockNum(buf)
 	if err != nil {
 		return nil, err

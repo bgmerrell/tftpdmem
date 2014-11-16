@@ -9,12 +9,13 @@ import (
 	"net"
 
 	"github.com/bgmerrell/tftpdmem/defs"
+	fmgr "github.com/bgmerrell/tftpdmem/filemanager"
 	errs "github.com/bgmerrell/tftpdmem/server/errors"
 	"github.com/bgmerrell/tftpdmem/util"
 )
 
 type OpToHandleMap map[uint16]func(
-	buf []byte, conn *net.UDPConn, src *net.UDPAddr) ([]byte, error)
+	buf []byte, conn *net.UDPConn, src *net.UDPAddr, fm *fmgr.FileManager) ([]byte, error)
 
 type Server struct {
 	port             int
@@ -22,14 +23,16 @@ type Server struct {
 	opToHandle       OpToHandleMap
 	isTransferServer bool
 	StopCh           chan struct{}
+	fileManager      *fmgr.FileManager
 }
 
-func New(port int, conn *net.UDPConn, opToHandle OpToHandleMap, isTransferServer bool) *Server {
+func New(port int, conn *net.UDPConn, opToHandle OpToHandleMap, isTransferServer bool, fm *fmgr.FileManager) *Server {
 	return &Server{port,
 		conn,
 		opToHandle,
 		isTransferServer,
-		make(chan struct{})}
+		make(chan struct{}),
+		fm}
 }
 
 func (s *Server) Serve() {
@@ -70,7 +73,7 @@ func (s *Server) route(buf []byte, src *net.UDPAddr) {
 		s.respondWithErr(errors.New(msg), src)
 		return
 	}
-	resp, err := fn(buf[defs.OpCodeSize:], s.conn, src)
+	resp, err := fn(buf[defs.OpCodeSize:], s.conn, src, s.fileManager)
 	if err != nil {
 		log.Println("Handle error: " + err.Error())
 		s.respondWithErr(err, src)

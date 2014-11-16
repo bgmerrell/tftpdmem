@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/bgmerrell/tftpdmem/defs"
+	fmgr "github.com/bgmerrell/tftpdmem/filemanager"
 	"github.com/bgmerrell/tftpdmem/handlers"
 	"github.com/bgmerrell/tftpdmem/server"
 )
@@ -42,8 +43,8 @@ func main() {
 		defs.OpRrq: handlers.HandleReadRequest,
 		// We'll just ignore ACKs to the main server, this server isn't
 		// smart enough to do anything about them.
-		defs.OpAck: func([]byte, *net.UDPConn, *net.UDPAddr) ([]byte, error) { return nil, nil }}
-	s := server.New(port, conn, opToHandle, false)
+		defs.OpAck: func([]byte, *net.UDPConn, *net.UDPAddr, *fmgr.FileManager) ([]byte, error) { return nil, nil }}
+	s := server.New(port, conn, opToHandle, false, fmgr.New())
 	go s.Serve()
 
 	sigCh := make(chan os.Signal)

@@ -5,10 +5,12 @@ import (
 	"testing"
 )
 
+var tfm *FileManager = New()
+
 func TestFileExistsTrue(t *testing.T) {
 	name := "foo"
-	filenameToData = map[string][]byte{name: []byte{}}
-	exists := FileExists(name)
+	tfm.filenameToData = map[string][]byte{name: []byte{}}
+	exists := tfm.FileExists(name)
 	if !exists {
 		t.Errorf("Expected filename \"%s\" to exist", name)
 	}
@@ -16,8 +18,8 @@ func TestFileExistsTrue(t *testing.T) {
 
 func TestFileExistsFalse(t *testing.T) {
 	name := "foo"
-	filenameToData = map[string][]byte{}
-	exists := FileExists(name)
+	tfm.filenameToData = map[string][]byte{}
+	exists := tfm.FileExists(name)
 	if exists {
 		t.Errorf("Expected filename \"%s\" to not exist", name)
 	}
@@ -25,16 +27,16 @@ func TestFileExistsFalse(t *testing.T) {
 
 func TestAddFile(t *testing.T) {
 	name := "foo"
-	filenameToData = map[string][]byte{}
-	err := AddFile(name, []byte{'a', 'b', 'c'})
+	tfm.filenameToData = map[string][]byte{}
+	err := tfm.AddFile(name, []byte{'a', 'b', 'c'})
 	if err != nil {
 		t.Fatal(err)
 	}
-	exists := FileExists(name)
+	exists := tfm.FileExists(name)
 	if !exists {
 		t.Errorf("Expected filename \"%s\" to exist", name)
 	}
-	bytes := filenameToData[name]
+	bytes := tfm.filenameToData[name]
 	expected := "abc"
 	if string(bytes) != expected {
 		t.Errorf("File contains %q, want: %q", bytes, expected)
@@ -43,16 +45,16 @@ func TestAddFile(t *testing.T) {
 
 func TestAddFileFail(t *testing.T) {
 	name := "foo"
-	filenameToData = map[string][]byte{}
-	err := AddFile(name, []byte{'a', 'b', 'c'})
+	tfm.filenameToData = map[string][]byte{}
+	err := tfm.AddFile(name, []byte{'a', 'b', 'c'})
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = AddFile(name, []byte{'d', 'e', 'f'})
+	err = tfm.AddFile(name, []byte{'d', 'e', 'f'})
 	if err == nil {
 		t.Errorf("Expected error adding \"%s\" for second time", name)
 	}
-	bytes := filenameToData[name]
+	bytes := tfm.filenameToData[name]
 	expected := "abc"
 	if string(bytes) != expected {
 		t.Errorf("File contains %q, want: %q", bytes, expected)
@@ -64,13 +66,13 @@ func TestAddConnInfo(t *testing.T) {
 	remoteTid := 5678
 	filename := "foo"
 	nextBlockNum := uint16(9)
-	tidToConnInfo = make(map[int]*connInfo)
-	err := AddConnInfo(localTid, remoteTid, filename, nextBlockNum)
+	tfm.tidToConnInfo = make(map[int]*connInfo)
+	err := tfm.AddConnInfo(localTid, remoteTid, filename, nextBlockNum)
 	if err != nil {
 		t.Fatal(err)
 	}
 	expected := &connInfo{filename, remoteTid, nextBlockNum, []byte{}}
-	ci := tidToConnInfo[localTid]
+	ci := tfm.tidToConnInfo[localTid]
 	if ci.filename != expected.filename {
 		t.Errorf("filename: %s, want: %s", ci.filename, expected.filename)
 	}
@@ -90,17 +92,17 @@ func TestAddConnInfoFail(t *testing.T) {
 	remoteTid := 5678
 	filename := "foo"
 	nextBlockNum := uint16(9)
-	tidToConnInfo = make(map[int]*connInfo)
-	err := AddConnInfo(localTid, remoteTid, filename, nextBlockNum)
+	tfm.tidToConnInfo = make(map[int]*connInfo)
+	err := tfm.AddConnInfo(localTid, remoteTid, filename, nextBlockNum)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = AddConnInfo(localTid, remoteTid, filename, nextBlockNum)
+	err = tfm.AddConnInfo(localTid, remoteTid, filename, nextBlockNum)
 	if err == nil {
 		t.Fatal("Expected error adding conn info a second time")
 	}
 	expected := &connInfo{filename, remoteTid, nextBlockNum, []byte{}}
-	ci := tidToConnInfo[localTid]
+	ci := tfm.tidToConnInfo[localTid]
 	if ci.filename != expected.filename {
 		t.Errorf("filename: %s, want: %s", ci.filename, expected.filename)
 	}
