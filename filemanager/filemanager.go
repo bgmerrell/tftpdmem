@@ -23,9 +23,18 @@ type connInfo struct {
 	data         []byte
 }
 
+// New returns a new FileManager.
 func New() *FileManager {
 	return &FileManager{
 		filenameToData: make(map[string]([]byte)),
+		tidToConnInfo:  make(map[int]*connInfo)}
+}
+
+// NewWithExistingFiles returns a FileManager with prepopulated files.  Handy
+// for testing.
+func NewWithExistingFiles(filenameToData map[string]([]byte)) *FileManager {
+	return &FileManager{
+		filenameToData: filenameToData,
 		tidToConnInfo:  make(map[int]*connInfo)}
 }
 
