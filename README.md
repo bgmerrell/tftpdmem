@@ -15,3 +15,5 @@ And then run (assuming you want to run the server on port 6969):
 ```$GOPATH/bin/tftpdmem --port 6969```
 
 If you don't have a Go environment setup, please follow the instructions over at https://golang.org/doc/code.html first.
+
+Tested using go version go1.3.1 darwin/amd64
