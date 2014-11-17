@@ -1,7 +1,7 @@
 tftpdmem
 ========
 
-tftpdmem is a TFTP server that stores its files as buffers in memory (though  Nothing actually prevents the OS from swapping the memory buffers to disk).
+tftpdmem is a TFTP server that stores its files as buffers in memory (though nothing actually prevents the OS from swapping the memory buffers to disk).
 
 Getting and Running
 ========
