@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/bgmerrell/tftpdmem/defs"
 	fmgr "github.com/bgmerrell/tftpdmem/filemanager"
 	errs "github.com/bgmerrell/tftpdmem/server/errors"
 	"github.com/bgmerrell/tftpdmem/util"
 )
+
+var readTimeout time.Duration = 10 * time.Second
 
 type OpToHandleMap map[uint16]func(
 	buf []byte, conn *net.UDPConn, src *net.UDPAddr, fm *fmgr.FileManager) ([]byte, error)
@@ -40,23 +43,44 @@ func (s *Server) Serve() {
 		select {
 		// Stop and close the connection
 		case <-s.StopCh:
-			s.StopCh <- struct{}{}
 			s.conn.Close()
 			return
 		default:
 			buf := make([]byte, defs.DatagramSize)
+			t := time.Now()
+			s.conn.SetReadDeadline(t.Add(readTimeout))
 			n, addr, err := s.conn.ReadFromUDP(buf)
-			if err != nil {
-				msg := "Error reading from UDP: " + err.Error()
-				log.Println(msg)
-				if s.isTransferServer {
-					s.respondWithErr(errors.New(msg), addr)
-					return
-				}
-				continue
+			if err == nil {
+				go s.route(buf[:n], addr)
+			} else {
+				s.handleErr(err, addr)
 			}
-			go s.route(buf[:n], addr)
 		}
+	}
+}
+
+func (s *Server) removeConnInfo() {
+	s.fileManager.DelConnInfo(s.conn.LocalAddr().(*net.UDPAddr).Port)
+}
+
+func (s *Server) handleErr(err error, addr *net.UDPAddr) {
+	// Main server timeouts are OK (they give us a chance to check the
+	// StopCh.  Transfer timeouts cause the transfer server to finish.
+	if err.(net.Error).Timeout() {
+		if s.isTransferServer {
+			msg := "Timeout waiting for data"
+			log.Println(msg)
+			s.removeConnInfo()
+			s.StopCh <- struct{}{}
+		}
+		return
+	}
+	msg := "Error reading from UDP: " + err.Error()
+	log.Println(msg)
+	if s.isTransferServer {
+		s.removeConnInfo()
+		s.respondWithErr(errors.New(msg), addr)
+		s.StopCh <- struct{}{}
 	}
 }
 
