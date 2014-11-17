@@ -46,13 +46,17 @@ func startNewTransferServer(
 
 // initTransferConn returns a new UDP conn to be used for data transfer.
 func initTransferConn(src *net.UDPAddr) (*net.UDPConn, error) {
-	// Get new conn on new port for transfer server
-	laddr := net.UDPAddr{IP: net.ParseIP("127.0.0.1")}
-	conn, err := net.ListenUDP(src.Network(), &laddr)
+	laddr, err := net.ResolveUDPAddr("udp", "")
 	if err != nil {
-		msg := "Error getting new UDP conn: " + err.Error()
+		msg := "Failed to resolve UDP addr: " + err.Error()
 		log.Println(msg)
-		return conn, errors.New(msg)
+		return nil, errors.New(msg)
+	}
+	conn, err := net.ListenUDP(laddr.Network(), laddr)
+	if err != nil {
+		msg := "ListenUDP failure: " + err.Error()
+		log.Println(msg)
+		return nil, errors.New(msg)
 	}
 	return conn, err
 }
@@ -81,6 +85,9 @@ func handleRequest(buf []byte, conn *net.UDPConn, src *net.UDPAddr, isWrite bool
 	}
 
 	conn, err = initTransferConn(src)
+	if err != nil {
+		return nil, &errs.SrvError{defs.ErrGeneric, err.Error()}
+	}
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
 
 	// Check if file exists

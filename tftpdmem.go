@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"flag"
 	"log"
 	"net"
@@ -25,13 +26,15 @@ func init() {
 }
 
 func main() {
-	log.Println("Starting tftpdmem on port", port)
-	laddr := net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: port}
-	conn, err := net.ListenUDP(laddr.Network(), &laddr)
+	laddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		log.Println("ListenUDP failure", err)
+		log.Println("Failed to resolve UDP addr:", err)
+		os.Exit(1)
+	}
+	log.Println("Starting tftpdmem on port", port)
+	conn, err := net.ListenUDP(laddr.Network(), laddr)
+	if err != nil {
+		log.Println("ListenUDP failure:", err)
 		os.Exit(1)
 	}
 	defer conn.Close()
