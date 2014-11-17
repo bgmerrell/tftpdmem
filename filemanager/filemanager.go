@@ -139,8 +139,8 @@ func (fm *FileManager) Read(localTid int, remoteTid int, blockNum uint16) ([]byt
 			"Got block %d, want %d", blockNum, info.nextBlockNum))
 	}
 	data := fm.filenameToData[info.filename]
-	startIdx := int(blockNum * defs.BlockSize)
-	endIdx := int(startIdx + defs.BlockSize)
+	startIdx := int(blockNum) * int(defs.BlockSize)
+	endIdx := startIdx + int(defs.BlockSize)
 	// A final ACK will put the startIdx out of bounds, and we don't need
 	// to respond to it.
 	if startIdx > len(data) {
