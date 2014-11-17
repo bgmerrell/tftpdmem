@@ -64,12 +64,10 @@ func (s *Server) removeConnInfo() {
 }
 
 func (s *Server) handleErr(err error, addr *net.UDPAddr) {
-	// Main server timeouts are OK (they give us a chance to check the
-	// StopCh.  Transfer timeouts cause the transfer server to finish.
+	// Server timeouts are OK (they give us a chance to check the
+	// StopCh).  Transfer timeouts cause the transfer server to finish.
 	if err.(net.Error).Timeout() {
 		if s.isTransferServer {
-			msg := "Timeout waiting for data"
-			log.Println(msg)
 			s.removeConnInfo()
 			s.StopCh <- struct{}{}
 		}
